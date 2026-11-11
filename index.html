@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎓 교수님 사랑합니다 | 디지털 롤링페이퍼</title>
+  <!-- 폰트: Pretendard (기본 본문) & Gaegu (포스트잇 손글씨 느낌) -->
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&display=swap" rel="stylesheet">
+  <!-- 스타일시트 -->
+  <link rel="stylesheet" href="style.css">
+  <!-- Supabase JS Client & Confetti 효과 라이브러리 -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+</head>
+<body>
+  <!-- 헤더 영역 -->
+  <header class="header">
+    <div class="header-container">
+      <div class="header-badge">💌 우리들의 마음을 전해요</div>
+      <h1 class="header-title">🎓 교수님께 드리는 롤링페이퍼</h1>
+      <p class="header-desc">
+        그동안 베풀어주신 은혜와 가르침에 진심으로 감사드립니다.<br>
+        자유롭게 축하와 감사의 한마디를 남겨주세요!
+      </p>
+
+      <div class="header-actions">
+        <div class="memo-count-badge" id="memoCountBadge">
+          <span class="count-icon">📝</span>
+          <span id="memoCount">0</span>개의 메시지가 도착했어요
+        </div>
+        <button class="btn btn-primary" id="openModalBtn">
+          <span>✏️</span> 메시지 남기기
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 수파베이스 설정 안내 배너 (초기 설정 전 안내용) -->
+  <div id="setupNotice" class="setup-notice hidden">
+    <div class="notice-card">
+      <div class="notice-icon">⚙️</div>
+      <div class="notice-content">
+        <h3>Supabase 설정이 필요해요!</h3>
+        <p><code>app.js</code> 파일 상단의 <strong>SUPABASE_URL</strong>과 <strong>SUPABASE_ANON_KEY</strong>를 여러분의 Supabase 프로젝트 정보로 입력해주세요.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 메인 롤링페이퍼 보드 영역 -->
+  <main class="board-container">
+    <!-- 검색 및 필터 바 -->
+    <div class="filter-bar">
+      <input type="text" id="searchInput" placeholder="작성자나 내용 검색..." />
+      <button class="btn btn-refresh" id="refreshBtn" title="새로고침">🔄 새로고침</button>
+    </div>
+
+    <!-- 로딩 스피너 -->
+    <div id="loadingSpinner" class="spinner-container">
+      <div class="spinner"></div>
+      <p>마음을 불러오는 중입니다...</p>
+    </div>
+
+    <!-- 빈 상태 안내 -->
+    <div id="emptyState" class="empty-state hidden">
+      <div class="empty-icon">📮</div>
+      <h3>아직 남겨진 메시지가 없어요</h3>
+      <p>교수님께 전할 첫 번째 감사의 편지를 남겨보세요!</p>
+      <button class="btn btn-primary" onclick="document.getElementById('openModalBtn').click()">
+        첫 메모 남기기 ✏️
+      </button>
+    </div>
+
+    <!-- 포스트잇 그리드 -->
+    <div id="memoGrid" class="memo-grid">
+      <!-- 자바스크립트로 동적 렌더링 됩니다 -->
+    </div>
+  </main>
+
+  <!-- 하단 플로팅 글쓰기 버튼 (모바일용) -->
+  <button class="fab-btn" id="fabBtn" title="메모 남기기">
+    ✏️
+  </button>
+
+  <!-- 메모 작성 모달 팝업 -->
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>💌 감사의 메모 남기기</h2>
+        <button class="close-btn" id="closeModalBtn">&times;</button>
+      </div>
+
+      <form id="memoForm">
+        <!-- 1. 작성자 정보 -->
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="authorInput">작성자 이름 <span class="required">*</span></label>
+            <input type="text" id="authorInput" placeholder="예: 김철수, 캡스톤 3팀" required maxlength="20">
+          </div>
+          <div class="form-group flex-1">
+            <label for="relationshipInput">소속 / 학번 <span class="optional">(선택)</span></label>
+            <input type="text" id="relationshipInput" placeholder="예: 21학번, 연구실 졸업생" maxlength="30">
+          </div>
+        </div>
+
+        <!-- 2. 아이콘 스티커 선택 -->
+        <div class="form-group">
+          <label>스티커 고르기</label>
+          <div class="emoji-picker" id="emojiPicker">
+            <label class="emoji-option">
+              <input type="radio" name="emoji" value="🎓" checked>
+              <span>🎓</span>
+            </label>
+            <label class="emoji-option">
+              <input type="radio" name="emoji" value="💐">
+              <span>💐</span>
+            </label>
+            <label class="emoji-option">
+              <input type="radio" name="emoji" value="❤️">
+              <span>❤️</span>
+            </label>
+            <label class="emoji-option">
+              <input type="radio" name="emoji" value="☕">
+              <span>☕</span>
+            </label>
+            <label class="emoji-option">
+              <input type="radio" name="emoji" value="🌟">
+              <span>🌟</span>
+            </label>
+            <label class="emoji-option">
+              <input type="radio" name="emoji" value="🍀">
+              <span>🍀</span>
+            </label>
+            <label class="emoji-option">
+              <input type="radio" name="emoji" value="👏">
+              <span>👏</span>
+            </label>
+            <label class="emoji-option">
+              <input type="radio" name="emoji" value="🎉">
+              <span>🎉</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 3. 포스트잇 색상 선택 -->
+        <div class="form-group">
+          <label>포스트잇 색상</label>
+          <div class="color-picker" id="colorPicker">
+            <label class="color-option">
+              <input type="radio" name="color" value="yellow" checked>
+              <span class="color-swatch bg-yellow" title="노랑"></span>
+            </label>
+            <label class="color-option">
+              <input type="radio" name="color" value="pink">
+              <span class="color-swatch bg-pink" title="분홍"></span>
+            </label>
+            <label class="color-option">
+              <input type="radio" name="color" value="green">
+              <span class="color-swatch bg-green" title="연두"></span>
+            </label>
+            <label class="color-option">
+              <input type="radio" name="color" value="blue">
+              <span class="color-swatch bg-blue" title="하늘"></span>
+            </label>
+            <label class="color-option">
+              <input type="radio" name="color" value="purple">
+              <span class="color-swatch bg-purple" title="보라"></span>
+            </label>
+            <label class="color-option">
+              <input type="radio" name="color" value="orange">
+              <span class="color-swatch bg-orange" title="주황"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 4. 메모 내용 -->
+        <div class="form-group">
+          <label for="contentInput">메모 내용 <span class="required">*</span></label>
+          <textarea id="contentInput" rows="5" placeholder="교수님께 전하고 싶은 마음을 적어주세요!" required maxlength="500"></textarea>
+          <div class="char-counter"><span id="charCount">0</span> / 500</div>
+        </div>
+
+        <!-- 제출 버튼 -->
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="cancelModalBtn">취소</button>
+          <button type="submit" class="btn btn-primary" id="submitBtn">
+            <span>✨</span> 롤링페이퍼에 붙이기
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 푸터 -->
+  <footer class="footer">
+    <p>Made with ❤️ for Professor | Powered by Supabase & Vercel</p>
+  </footer>
+
+  <!-- 메인 스크립트 -->
+  <script src="app.js"></script>
+</body>
+</html>
+
