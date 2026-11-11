@@ -2,10 +2,6 @@
  * ========================================================
  * 🎓 디지털 롤링페이퍼 - 프론트엔드 & Supabase 연동 로직
  * ========================================================
- * 
- * [초보자 안내]
- * Supabase 대시보드(Project Settings -> API)에서 확인한 
- * Project URL과 anon public API Key를 아래 두 변수에 붙여넣으세요!
  */
 const SUPABASE_URL = 'https://qweexjjtkaxgmnyelqrt.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_R3vbvXLOM3qIbJVYQDUd2w_8ENcdBW5';
@@ -13,12 +9,12 @@ const SUPABASE_ANON_KEY = 'sb_publishable_R3vbvXLOM3qIbJVYQDUd2w_8ENcdBW5';
 // URL 정리 (혹시 /rest/v1 이 붙어있더라도 자동 제거)
 const cleanSupabaseUrl = SUPABASE_URL.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
 
-// Supabase 클라이언트 초기화
-let supabase = null;
+// Supabase 클라이언트 초기화 (CDN 변수명 충돌 방지를 위해 supabaseClient 사용)
+let supabaseClient = null;
 const isConfigured = cleanSupabaseUrl !== 'YOUR_SUPABASE_URL' && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY';
 
-if (isConfigured && window.supabase) {
-  supabase = window.supabase.createClient(cleanSupabaseUrl, SUPABASE_ANON_KEY);
+if (isConfigured && window.supabase && typeof window.supabase.createClient === 'function') {
+  supabaseClient = window.supabase.createClient(cleanSupabaseUrl, SUPABASE_ANON_KEY);
 }
 
 // 메모 데이터 캐시 (검색 기능용)
@@ -48,13 +44,18 @@ const submitBtn = document.getElementById('submitBtn');
 // 1. 초기화 및 이벤트 리스너 등록
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
+  // 라이브러리가 늦게 로드될 경우 대비
+  if (!supabaseClient && isConfigured && window.supabase?.createClient) {
+    supabaseClient = window.supabase.createClient(cleanSupabaseUrl, SUPABASE_ANON_KEY);
+  }
+
   // 설정 여부 확인
-  if (!isConfigured) {
-    setupNotice.classList.remove('hidden');
+  if (!isConfigured || !supabaseClient) {
+    if (!isConfigured) {
+      setupNotice.classList.remove('hidden');
+    }
     loadingSpinner.classList.add('hidden');
     emptyState.classList.remove('hidden');
-    emptyState.querySelector('h3').textContent = 'Supabase 설정이 아직 완료되지 않았습니다';
-    emptyState.querySelector('p').textContent = 'app.js 파일의 SUPABASE_URL과 SUPABASE_ANON_KEY를 입력해주세요.';
     return;
   }
 
@@ -65,56 +66,67 @@ document.addEventListener('DOMContentLoaded', () => {
   subscribeToMemos();
 
   // 모달 열기/닫기 이벤트
-  openModalBtn.addEventListener('click', openModal);
-  fabBtn.addEventListener('click', openModal);
-  closeModalBtn.addEventListener('click', closeModal);
-  cancelModalBtn.addEventListener('click', closeModal);
-  modalBackdrop.addEventListener('click', (e) => {
-    if (e.target === modalBackdrop) closeModal();
-  });
+  if (openModalBtn) openModalBtn.addEventListener('click', openModal);
+  if (fabBtn) fabBtn.addEventListener('click', openModal);
+  if (closeModalBtn) closeModalBtn.addEventListener('click', closeModal);
+  if (cancelModalBtn) cancelModalBtn.addEventListener('click', closeModal);
+  if (modalBackdrop) {
+    modalBackdrop.addEventListener('click', (e) => {
+      if (e.target === modalBackdrop) closeModal();
+    });
+  }
 
   // 폼 제출 이벤트
-  memoForm.addEventListener('submit', handleFormSubmit);
+  if (memoForm) memoForm.addEventListener('submit', handleFormSubmit);
 
   // 글자 수 카운터
-  contentInput.addEventListener('input', () => {
-    charCount.textContent = contentInput.value.length;
-  });
+  if (contentInput && charCount) {
+    contentInput.addEventListener('input', () => {
+      charCount.textContent = contentInput.value.length;
+    });
+  }
 
   // 새로고침 버튼
-  refreshBtn.addEventListener('click', () => {
-    fetchMemos();
-  });
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      fetchMemos();
+    });
+  }
 
   // 검색 필터
-  searchInput.addEventListener('input', (e) => {
-    const query = e.target.value.toLowerCase().trim();
-    if (!query) {
-      renderMemos(allMemos);
-      return;
-    }
-    const filtered = allMemos.filter((memo) => {
-      const author = (memo.author || '').toLowerCase();
-      const relation = (memo.relationship || '').toLowerCase();
-      const content = (memo.content || '').toLowerCase();
-      return author.includes(query) || relation.includes(query) || content.includes(query);
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase().trim();
+      if (!query) {
+        renderMemos(allMemos);
+        return;
+      }
+      const filtered = allMemos.filter((memo) => {
+        const author = (memo.author || '').toLowerCase();
+        const relation = (memo.relationship || '').toLowerCase();
+        const content = (memo.content || '').toLowerCase();
+        return author.includes(query) || relation.includes(query) || content.includes(query);
+      });
+      renderMemos(filtered);
     });
-    renderMemos(filtered);
-  });
+  }
 });
 
 // ==========================================
 // 2. 데이터 가져오기 (SELECT)
 // ==========================================
 async function fetchMemos() {
-  if (!supabase) return;
+  if (!supabaseClient) {
+    loadingSpinner.classList.add('hidden');
+    return;
+  }
 
   try {
     loadingSpinner.classList.remove('hidden');
     memoGrid.innerHTML = '';
     emptyState.classList.add('hidden');
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('memos')
       .select('*')
       .order('created_at', { ascending: false });
@@ -139,7 +151,7 @@ async function fetchMemos() {
 // ==========================================
 function renderMemos(memos) {
   memoGrid.innerHTML = '';
-  memoCountEl.textContent = memos.length;
+  if (memoCountEl) memoCountEl.textContent = memos.length;
 
   if (memos.length === 0) {
     emptyState.classList.remove('hidden');
@@ -186,7 +198,7 @@ function renderMemos(memos) {
 // ==========================================
 async function handleFormSubmit(e) {
   e.preventDefault();
-  if (!supabase) {
+  if (!supabaseClient) {
     alert('Supabase 연동이 완료되지 않았습니다.');
     return;
   }
@@ -207,7 +219,7 @@ async function handleFormSubmit(e) {
   submitBtn.innerHTML = '<span>⏳</span> 붙이는 중...';
 
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('memos')
       .insert([
         {
@@ -231,7 +243,7 @@ async function handleFormSubmit(e) {
 
     // 폼 초기화 및 모달 닫기
     memoForm.reset();
-    charCount.textContent = '0';
+    if (charCount) charCount.textContent = '0';
     closeModal();
 
     // 목록 새로고침
@@ -249,20 +261,24 @@ async function handleFormSubmit(e) {
 // 5. 실시간 동기화 (Supabase Realtime)
 // ==========================================
 function subscribeToMemos() {
-  if (!supabase) return;
+  if (!supabaseClient) return;
 
-  supabase
-    .channel('public:memos')
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'memos' }, (payload) => {
-      // 새로운 글이 추가되면 전체 목록 최상단에 추가
-      const newMemo = payload.new;
-      const alreadyExists = allMemos.some((m) => m.id === newMemo.id);
-      if (!alreadyExists) {
-        allMemos.unshift(newMemo);
-        renderMemos(allMemos);
-      }
-    })
-    .subscribe();
+  try {
+    supabaseClient
+      .channel('public:memos')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'memos' }, (payload) => {
+        // 새로운 글이 추가되면 전체 목록 최상단에 추가
+        const newMemo = payload.new;
+        const alreadyExists = allMemos.some((m) => m.id === newMemo.id);
+        if (!alreadyExists) {
+          allMemos.unshift(newMemo);
+          renderMemos(allMemos);
+        }
+      })
+      .subscribe();
+  } catch (err) {
+    console.warn('Realtime 연결 실패 (기본 조작에는 문제 없음):', err);
+  }
 }
 
 // ==========================================
@@ -300,4 +316,3 @@ function escapeHtml(text) {
   };
   return text.toString().replace(/[&<>"']/g, (m) => map[m]);
 }
-
